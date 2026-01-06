@@ -4,9 +4,11 @@ A Python-based automated trading feeder that streams live market data from FYERS
 
 ## Features
 
-- **Live Streaming**: Updates up to 400 instruments in near real-time (2-4s latency).
+- **Live Streaming**: Updates up to 400 instruments in near real-time (4s latency to respect rate limits).
+- **52-Week High/Low**: Automatically fetches 1 year of historical data at startup to calculate and display valid 52W High/Low values (hybrid approach).
+- **Liveness Indicator**: The "Updated At" column automatically refreshes every 4s (System Time) to show the feeder is active, even if prices are static.
 - **Automated**: Auto-starts at 09:15 IST and stops at 15:30 IST.
-- **Resilient**: Auto-reconnects on network failure, refreshes auth tokens daily.
+- **Resilient**: Auto-reconnects on network failure, refreshes auth tokens daily using a persistent refresh token.
 - **Configurable**: Manage instrument list directly from Google Sheets (`Config` tab).
 - **Notifications**: Telegram alerts for critical errors (Auth failure, API limits, Crashes).
 - **Secure**: Uses environment variables and non-root Docker container.
@@ -57,7 +59,14 @@ TELEGRAM_CHAT_ID=your_chat_id
 ### 2. Service Account Key
 Place your `service_account.json` in the root directory.
 
-### 3. Local Run (Testing)
+### 3. Refresh Token
+Create a `refresh_token.json` file in the root directory with your initial refresh token (obtained via login flow or creating a token manually). The app will update this file automatically.
+Format:
+```json
+{"refresh_token": "your_initial_refresh_token"}
+```
+
+### 4. Local Run (Testing)
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -66,7 +75,7 @@ pip install -r requirements.txt
 python -m src.main
 ```
 
-### 4. Docker Deployment
+### 5. Docker Deployment
 Build the image:
 ```bash
 docker build -t trading-feeder .
@@ -80,14 +89,16 @@ docker run -d \
   --env-file .env \
   -v $(pwd)/service_account.json:/app/service_account.json \
   -v $(pwd)/access_token.json:/app/access_token.json \
+  -v $(pwd)/refresh_token.json:/app/refresh_token.json \
   -v $(pwd)/logs:/app/logs \
   trading-feeder
 ```
-*Note: We mount `access_token.json` to persist the token across container restarts.*
+*Note: We mount `access_token.json` AND `refresh_token.json` to persist authentication across container restarts.*
 
 ## Troubleshooting
 
 - **Logs**: `docker logs -f trading-feeder`
-- **Auth Error**: Ensure TOTP secret is correct and Time is synced.
+- **Auth Error**: Ensure `refresh_token.json` is valid and TOTP secret is correct.
+- **52W Data 0?**: Check logs to see if History API fetch failed at startup.
 - **Values not updating**: Check `Config` sheet has `TRUE` for instruments.
 - **Telegram silent**: Check Chat ID and Bot Token.

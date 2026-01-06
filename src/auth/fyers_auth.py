@@ -90,7 +90,8 @@ class FyersAuthenticator:
             data = resp.json()
             if data.get("s") == "ok":
                 access_token = data.get("access_token")
-                self._save_token(access_token)
+                new_refresh_token = data.get("refresh_token")
+                self._save_token(access_token, new_refresh_token)
                 return access_token
             else:
                 logger.error(f"Refresh API Failed: {data}")
@@ -122,14 +123,22 @@ class FyersAuthenticator:
                 logger.warning(f"Failed to load token file: {e}")
         return None
 
-    def _save_token(self, token):
-        """Saves access token to file."""
+    def _save_token(self, access_token, refresh_token=None):
+        """Saves access token and optionally refresh token to files."""
         try:
+            # Save Access Token
             with open(self.token_path, "w") as f:
-                json.dump({"access_token": token, "created_at": time.time()}, f)
+                json.dump({"access_token": access_token, "created_at": time.time()}, f)
             logger.info(f"Access token saved to {self.token_path}")
+            
+            # Save Refresh Token if provided
+            if refresh_token:
+                with open("refresh_token.json", "w") as f:
+                    json.dump({"refresh_token": refresh_token}, f)
+                logger.info("Refresh token updated in refresh_token.json")
+                
         except Exception as e:
-            logger.error(f"Failed to save token: {e}")
+            logger.error(f"Failed to save tokens: {e}")
 
     def _is_token_valid(self):
         """
@@ -137,10 +146,6 @@ class FyersAuthenticator:
         Expiration is handled during load, so mere presence here implies validity for now.
         """
         return self.access_token is not None
-
-
-
-# ... imports ...
 
     def _perform_login(self, retries=3):
         """
@@ -170,7 +175,8 @@ class FyersAuthenticator:
         
         if response.get("s") == "ok":
             access_token = response.get("access_token")
-            self._save_token(access_token)
+            refresh_token = response.get("refresh_token")
+            self._save_token(access_token, refresh_token)
             return access_token
         else:
             raise Exception(f"Token generation failed: {response}")
