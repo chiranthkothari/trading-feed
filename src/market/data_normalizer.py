@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 import time
+import pytz
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +98,13 @@ class DataNormalizer:
             except ValueError:
                 # Fallback if casting fails
                 # updated_at = str(raw_time)
-                date_str = datetime.now().strftime('%Y-%m-%d')
+                ist_tz = pytz.timezone('Asia/Kolkata')
+                date_str = datetime.now(ist_tz).strftime('%Y-%m-%d')
             
             # Change: User wants to see liveness. "Updated At" should be System Time (Fetch Time)
-            updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # IST Enforcement
+            ist_tz = pytz.timezone('Asia/Kolkata')
+            updated_at = datetime.now(ist_tz).strftime('%Y-%m-%d %H:%M:%S')
 
             # Calculations
             change_rs = 0

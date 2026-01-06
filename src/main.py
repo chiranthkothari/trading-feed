@@ -201,11 +201,12 @@ class TradingFeederApp:
                         rows = list(self.market_data_buffer.values())
                     
                     if rows:
-                        # Force Update Timestamp for Liveness (Index 15)
-                        current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        for row in rows:
-                            if len(row) > 15:
-                                row[15] = current_time_str
+                        # Force Update Timestamp for Liveness (Index 15) -> REMOVED to fix market close bug
+                        # We only want to update if data actually changes.
+                        # current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        # for row in rows:
+                        #     if len(row) > 15:
+                        #         row[15] = current_time_str
                         
                         logger.info(f"Writing {len(rows)} rows to Live Data sheet...")
                         self.sheets.write_live_data(rows)
