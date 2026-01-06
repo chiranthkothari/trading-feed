@@ -191,13 +191,13 @@ class TestFeeder:
                 if rows:
                     # Rows are already enriched in on_market_data with quotes
                     
-                    # Force Update Timestamp for Liveness (Index 15)
+                    # Force Update Timestamp for Liveness (Index 15) -> REMOVED
                     # This ensures "Updated At" changes every cycle even if no new ticks arrive
-                    from datetime import datetime
-                    current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    for row in rows:
-                        if len(row) > 15:
-                             row[15] = current_time_str
+                    # from datetime import datetime
+                    # current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    # for row in rows:
+                    #     if len(row) > 15:
+                    #          row[15] = current_time_str
 
                     logger.info(f"Writing {len(rows)} rows to Live Data sheet...")
                     self.sheets.write_live_data(rows)

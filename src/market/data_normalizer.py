@@ -48,6 +48,9 @@ class DataNormalizer:
             if not isinstance(raw_data, dict):
                 logger.warning(f"Invalid data format received: {type(raw_data)}")
                 return None
+            
+            # DEBUG: Log what we are receiving
+            logger.info(f"Normalizing Data for Symbol: {raw_data.get('symbol', 'UNKNOWN')} | Data: {raw_data}")
 
             symbol = raw_data.get("symbol", "")
             if not symbol:
