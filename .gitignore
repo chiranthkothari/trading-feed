@@ -37,6 +37,7 @@ credentials.json
 token.json
 access_token.json
 refresh_token.json
+access_token_backup.json
 
 # Project Specific
 *.log
