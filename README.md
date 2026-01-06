@@ -1,6 +1,6 @@
 # FYERS Live Market Data → Google Sheets Automation
 
-A Python-based automated trading feeder that streams live market data from FYERS API to Google Sheets in real-time. Designed to run in Docker (e.g., on Oracle Cloud Free Tier).
+A Python-based automated trading feeder that streams live market data from FYERS API to Google Sheets in real-time. Designed to run in Docker
 
 ## Features
 
