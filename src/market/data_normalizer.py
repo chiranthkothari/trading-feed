@@ -59,12 +59,18 @@ class DataNormalizer:
             prev_close = raw_data.get("prev_close_price", 0)
             volume = raw_data.get("vol_traded_today", 0)
             
-            # Traded Value (Turnover) might strictly be logic: (Average Price * Volume) 
-            # or provided by API. V3 often provides 'val_traded' or similar? 
-            # If not present, we can approximate `ltp * volume` but that's inaccurate.
-            # Let's use 0 if not present.
-            traded_value = raw_data.get("total_buy_qty", 0) # Placeholder key, check SDK for turnover
-            # Actually, "traded_value" might not be standard in lite mode.
+            # Traded Value (Turnover)
+            # Try standard keys 'val_traded' or 'value'
+            traded_value = raw_data.get("val_traded", raw_data.get("value", 0))
+            
+            # If 0, try to calculate: Volume * AvgPrice (if available)
+            if traded_value == 0 and volume > 0:
+                 avg_price = raw_data.get("avg_trade_price", 0)
+                 if avg_price > 0:
+                     traded_value = volume * avg_price
+                 else:
+                     # Fallback: Approximate using LTP (Inaccurate but better than 0 for visual)
+                     traded_value = volume * ltp
             
             # Bid/Ask
             # V3 often gives 'bid_price' and 'ask_price' in full mode
