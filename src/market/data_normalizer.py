@@ -50,7 +50,7 @@ class DataNormalizer:
                 return None
             
             # DEBUG: Log what we are receiving
-            logger.info(f"Normalizing Data for Symbol: {raw_data.get('symbol', 'UNKNOWN')} | Data: {raw_data}")
+            logger.debug(f"Normalizing Data for Symbol: {raw_data.get('symbol', 'UNKNOWN')} | Data: {raw_data}")
 
             symbol = raw_data.get("symbol", "")
             if not symbol:

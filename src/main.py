@@ -70,6 +70,26 @@ class TradingFeederApp:
                 # ENRICH IMMEDIATELY (Prevent flicker)
                 # Apply 52W data if available
                 meta = self.symbol_metadata.get(symbol, {})
+                
+                # Dynamic update of 52W High/Low
+                ltp = normalized_row[6]
+                if ltp > 0:
+                    current_52h = meta.get("52h", 0)
+                    current_52l = meta.get("52l", 0)
+                    
+                    updated = False
+                    if ltp > current_52h:
+                        meta["52h"] = ltp
+                        updated = True
+                    
+                    if current_52l == 0 or ltp < current_52l:
+                        meta["52l"] = ltp
+                        updated = True
+                    
+                    if updated:
+                        # self.symbol_metadata stores reference to 'meta', so it updates globally
+                        pass
+
                 if meta and len(normalized_row) > 14:
                      normalized_row[13] = meta.get("52h", 0)
                      normalized_row[14] = meta.get("52l", 0)
