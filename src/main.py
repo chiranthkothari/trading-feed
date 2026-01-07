@@ -41,6 +41,10 @@ class TradingFeederApp:
         self.ws_client = None
         self.quote_client = None
 
+        # Config Refresh
+        self.last_config_refresh_time = time.time()
+        self.config_refresh_interval = 300 # 5 Minutes
+
     def handle_shutdown(self, signum, frame):
         logger.info("Shutdown signal received. Exiting...")
         self.stop_event.set()
@@ -93,8 +97,62 @@ class TradingFeederApp:
         except Exception as e:
             logger.error(f"Failed to extract App ID from token: {e}")
             return None
+            return None
 
-    def run(self):
+    def refresh_config_if_needed(self):
+        """Checks if config needs refresh and updates subscriptions."""
+        if time.time() - self.last_config_refresh_time < self.config_refresh_interval:
+            return
+
+        logger.info("Checking for Config updates...")
+        self.last_config_refresh_time = time.time()
+        
+        try:
+            new_instruments = self.sheets.read_config()
+            if not new_instruments:
+                logger.warning("Config refresh returned empty. Ignoring.")
+                return
+
+            old_symbols = set(inst['Symbol'] for inst in self.instruments)
+            new_symbols = set(inst['Symbol'] for inst in new_instruments)
+
+            added = new_symbols - old_symbols
+            removed = old_symbols - new_symbols
+
+            if not added and not removed:
+                logger.info("No config changes detected.")
+                return
+
+            logger.info(f"Config changes detected! Added: {len(added)}, Removed: {len(removed)}")
+
+            # Update State
+            self.instruments = new_instruments
+            
+            # Handle WebSocket Subscriptions
+            if self.ws_client and self.ws_client.is_connected:
+                if removed:
+                    logger.info(f"Unsubscribing from {len(removed)} symbols...")
+                    self.ws_client.unsubscribe(list(removed))
+                    # Clean buffer
+                    with self.buffer_lock:
+                        for sym in removed:
+                            self.market_data_buffer.pop(sym, None)
+                
+                if added:
+                    logger.info(f"Subscribing to {len(added)} new symbols...")
+                    self.ws_client.subscribe(list(added))
+                    
+                    # Fetch 52W for new symbols
+                    if self.quote_client:
+                        try:
+                            logger.info("Fetching 52W data for new symbols...")
+                            new_meta = self.quote_client.get_52_week_data(list(added))
+                            self.symbol_metadata.update(new_meta)
+                        except Exception as e:
+                            logger.error(f"Failed to fetch 52W for new symbols: {e}")
+
+        except Exception as e:
+            logger.error(f"Config refresh failed: {e}")
         logger.info("Starting Trading Feeder Application...")
         
         try:
@@ -195,6 +253,9 @@ class TradingFeederApp:
                 # write_interval = 4 (from User request)
                 
                 while self.market_hours.is_market_open() and not self.stop_event.is_set():
+                    # Check for Config Refresh
+                    self.refresh_config_if_needed()
+
                     time.sleep(4) # Rate limit protection (4s latency)
                     
                     with self.buffer_lock:
