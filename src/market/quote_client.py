@@ -40,42 +40,65 @@ class QuoteClient:
         logger.info(f"Fetching History (1Y) for {len(symbols)} symbols to calculate 52W H/L...")
 
         for symbol in symbols:
-            try:
-                # API Params: symbol, resolution=D, date_format=1, range_from, range_to
-                params = {
-                    "symbol": symbol,
-                    "resolution": "D",
-                    "date_format": "1",
-                    "range_from": range_from,
-                    "range_to": range_to,
-                    "cont_flag": "1"
-                }
-                
-                res = requests.get(self.history_url, headers=headers, params=params)
-                data = res.json()
-                # logger.info(f"DEBUG HISTORY RESP {symbol}: {data}") # Too verbose
-                
-                if data.get("s") == "ok" and data.get("candles"):
-                    # Candles format: [timestamp, open, high, low, close, volume]
-                    # Index 2 = High, Index 3 = Low
-                    candles = data["candles"]
-                    highs = [c[2] for c in candles]
-                    lows = [c[3] for c in candles]
-                    
-                    results[symbol] = {
-                        "52h": max(highs) if highs else 0,
-                        "52l": min(lows) if lows else 0
+            retries = 3
+            backoff = 2
+            
+            for attempt in range(retries):
+                try:
+                    # API Params: symbol, resolution=D, date_format=1, range_from, range_to
+                    params = {
+                        "symbol": symbol,
+                        "resolution": "D",
+                        "date_format": "1",
+                        "range_from": range_from,
+                        "range_to": range_to,
+                        "cont_flag": "1"
                     }
-                else:
-                    logger.warning(f"History fetch failed for {symbol}: {data.get('message')}")
+                    
+                    res = requests.get(self.history_url, headers=headers, params=params)
+                    data = res.json()
+                    
+                    if data.get("s") == "ok" and data.get("candles"):
+                        # Candles format: [timestamp, open, high, low, close, volume]
+                        # Index 2 = High, Index 3 = Low
+                        candles = data["candles"]
+                        # Just to be safe, filter invalid candles
+                        valid_candles = [c for c in candles if len(c) > 3]
+                        if valid_candles:
+                            highs = [c[2] for c in valid_candles]
+                            lows = [c[3] for c in valid_candles]
+                            results[symbol] = {
+                                "52h": max(highs) if highs else 0,
+                                "52l": min(lows) if lows else 0
+                            }
+                        else:
+                             results[symbol] = {"52h": 0, "52l": 0}
+                        break # Success, move to next symbol
+
+                    elif data.get("s") == "error":
+                        msg = data.get("message", "").lower()
+                        if "limit reached" in msg:
+                            logger.warning(f"Rate limit hit for {symbol}. Retrying in {backoff}s...")
+                            time.sleep(backoff)
+                            backoff *= 2 # Exponential backoff
+                            continue # Retry
+                        else:
+                            logger.warning(f"History fetch failed for {symbol}: {data.get('message')}")
+                            results[symbol] = {"52h": 0, "52l": 0}
+                            break # Non-retryable error
+                    else:
+                        # Unknown state
+                        results[symbol] = {"52h": 0, "52l": 0}
+                        break
+
+                except Exception as e:
+                    logger.error(f"Error calculating 52W for {symbol}: {e}")
                     results[symbol] = {"52h": 0, "52l": 0}
-                
-                # Rate limit protection (tiny sleep)
-                time.sleep(0.1)
-                
-            except Exception as e:
-                logger.error(f"Error calculating 52W for {symbol}: {e}")
-                results[symbol] = {"52h": 0, "52l": 0}
+                    break
+            
+            # Rate limit protection (sleep between symbols)
+            time.sleep(0.5) # slowed down from 0.1 to 0.5 to prevent hitting limit
+
 
         return results
 
