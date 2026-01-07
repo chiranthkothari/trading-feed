@@ -43,7 +43,7 @@ class TradingFeederApp:
 
         # Config Refresh
         self.last_config_refresh_time = time.time()
-        self.config_refresh_interval = 300 # 5 Minutes
+        self.config_refresh_interval = Config.CONFIG_REFRESH_INTERVAL
 
     def handle_shutdown(self, signum, frame):
         logger.info("Shutdown signal received. Exiting...")

@@ -25,6 +25,9 @@ class Config:
     # Telegram Notifications
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    
+    # App Settings
+    CONFIG_REFRESH_INTERVAL = int(os.getenv("CONFIG_REFRESH_INTERVAL", 300))
 
     @classmethod
     def validate(cls):
