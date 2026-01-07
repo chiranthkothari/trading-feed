@@ -153,6 +153,8 @@ class TradingFeederApp:
 
         except Exception as e:
             logger.error(f"Config refresh failed: {e}")
+
+    def run(self):
         logger.info("Starting Trading Feeder Application...")
         
         try:
