@@ -1,6 +1,10 @@
 import logging
 import time
+import socket
 import sys
+
+# Set global timeout to prevent hangs (e.g. infinite API calls)
+socket.setdefaulttimeout(60)
 import signal
 import threading
 import base64
