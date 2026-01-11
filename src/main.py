@@ -35,6 +35,7 @@ class TradingFeederApp:
         self.buffer_lock = threading.Lock()
         self.instruments = [] # List of config dicts
         self.symbol_metadata = {} # 52W Data cache
+        self.last_update_times = {} # Key: Symbol, Value: timestamp (for staleness detection)
         
         # Initialize Modules
         self.notifier = TelegramNotifier()
@@ -96,6 +97,7 @@ class TradingFeederApp:
 
                 with self.buffer_lock:
                     self.market_data_buffer[symbol] = normalized_row
+                    self.last_update_times[symbol] = time.time()
             else:
                 pass 
         except Exception as e:
@@ -290,14 +292,29 @@ class TradingFeederApp:
                     # Sort by symbol to ensure consistent row ordering (prevents flicker)
                     rows.sort(key=lambda x: x[0] if x else "")
                     
+                    # Staleness detection: warn about symbols not receiving updates
+                    current_time = time.time()
+                    stale_threshold = 60  # seconds
+                    with self.buffer_lock:
+                        stale_symbols = [
+                            sym for sym, last_update in self.last_update_times.items()
+                            if current_time - last_update > stale_threshold
+                        ]
+                    if stale_symbols:
+                        logger.warning(f"Stale symbols (no updates for {stale_threshold}s): {stale_symbols}")
+                        # Auto-resubscribe stale symbols
+                        if self.ws_client and self.ws_client.is_connected:
+                            logger.info(f"Re-subscribing to {len(stale_symbols)} stale symbols...")
+                            try:
+                                self.ws_client.subscribe(stale_symbols)
+                                # Reset their update times to avoid immediate re-trigger
+                                with self.buffer_lock:
+                                    for sym in stale_symbols:
+                                        self.last_update_times[sym] = time.time()
+                            except Exception as e:
+                                logger.error(f"Failed to re-subscribe stale symbols: {e}")
+                    
                     if rows:
-                        # Force Update Timestamp for Liveness (Index 15) -> REMOVED to fix market close bug
-                        # We only want to update if data actually changes.
-                        # current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        # for row in rows:
-                        #     if len(row) > 15:
-                        #         row[15] = current_time_str
-                        
                         logger.info(f"Writing {len(rows)} rows to Live Data sheet...")
                         self.sheets.write_live_data(rows)
                     else:
