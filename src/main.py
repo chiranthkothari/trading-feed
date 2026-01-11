@@ -287,6 +287,9 @@ class TradingFeederApp:
                     with self.buffer_lock:
                         rows = list(self.market_data_buffer.values())
                     
+                    # Sort by symbol to ensure consistent row ordering (prevents flicker)
+                    rows.sort(key=lambda x: x[0] if x else "")
+                    
                     if rows:
                         # Force Update Timestamp for Liveness (Index 15) -> REMOVED to fix market close bug
                         # We only want to update if data actually changes.
