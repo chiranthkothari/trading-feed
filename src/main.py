@@ -36,6 +36,7 @@ class TradingFeederApp:
         self.instruments = [] # List of config dicts
         self.symbol_metadata = {} # 52W Data cache
         self.last_update_times = {} # Key: Symbol, Value: timestamp (for staleness detection)
+        self.symbol_rank = {} # Key: Symbol, Value: Index (from Config sheet)
         
         # Initialize Modules
         self.notifier = TelegramNotifier()
@@ -153,6 +154,7 @@ class TradingFeederApp:
 
             # Update State
             self.instruments = new_instruments
+            self.symbol_rank = {inst['Symbol']: i for i, inst in enumerate(self.instruments)}
             
             # Handle WebSocket Subscriptions
             if self.ws_client and self.ws_client.is_connected:
@@ -230,6 +232,8 @@ class TradingFeederApp:
                     logger.warning("No enabled instruments found in Config sheet.")
                     time.sleep(60)
                     continue
+
+                self.symbol_rank = {inst['Symbol']: i for i, inst in enumerate(self.instruments)}
                 
                 symbols_to_subscribe = [inst['Symbol'] for inst in self.instruments]
                 logger.info(f"Targeting {len(symbols_to_subscribe)} instruments.")
@@ -289,8 +293,9 @@ class TradingFeederApp:
                     with self.buffer_lock:
                         rows = list(self.market_data_buffer.values())
                     
-                    # Sort by symbol to ensure consistent row ordering (prevents flicker)
-                    rows.sort(key=lambda x: x[0] if x else "")
+                    # Sort by symbol to ensure consistent row ordering (based on Config rank)
+                    # Use a large number (9999) for symbols not found in rank to place them at the end
+                    rows.sort(key=lambda x: self.symbol_rank.get(x[0], 9999) if x else 9999)
                     
                     # Staleness detection: warn about symbols not receiving updates
                     current_time = time.time()
