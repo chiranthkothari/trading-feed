@@ -101,7 +101,19 @@ class SheetsClient:
                 cell_range = f"A2:{end_col_letter}{num_rows + 1}"
                 
                 worksheet.update(values=data, range_name=cell_range)
-                logger.debug(f"Updated {num_rows} rows in Live Data sheet.")
+                
+                # Clear stale rows beyond the current data
+                # Start clearing from the row after the last data row
+                clear_start_row = num_rows + 2
+                # We want to clear everything below. A safe large range is usually enough, 
+                # or we can just clear a reasonable chunk. 
+                # Better: Clear from start_row to end of sheet. 
+                # 'A{row}:Z' implies to the end of sheet in gspread if supported, or we pick a large number.
+                # Let's use a large number (e.g., 2000) to be safe for this use case.
+                clear_range = f"A{clear_start_row}:Z2000"
+                worksheet.batch_clear([clear_range])
+                
+                logger.debug(f"Updated {num_rows} rows and cleared stale data starting from row {clear_start_row}.")
                 return
 
             except APIError as e:
