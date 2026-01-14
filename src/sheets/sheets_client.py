@@ -46,10 +46,11 @@ class SheetsClient:
             worksheet = self.sheet.worksheet(self.config_sheet_name)
             records = worksheet.get_all_records()
             
-            enabled_instruments = [
-                row for row in records 
-                if str(row.get("Enabled", "")).upper() == "TRUE"
-            ]
+            enabled_instruments = []
+            for row in records:
+                enabled_val = str(row.get("Enabled", "")).strip().upper()
+                if enabled_val in ["TRUE", "YES", "1", "Y", "ENABLE", "ENABLED"]:
+                    enabled_instruments.append(row)
             logger.info(f"Loaded {len(enabled_instruments)} enabled instruments from config.")
             return enabled_instruments
         except Exception as e:

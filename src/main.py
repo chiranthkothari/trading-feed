@@ -131,26 +131,35 @@ class TradingFeederApp:
         if time.time() - self.last_config_refresh_time < self.config_refresh_interval:
             return
 
-        logger.info("Checking for Config updates...")
-        self.last_config_refresh_time = time.time()
+        logger.info(f"Checking for Config updates (Internal: {self.config_refresh_interval}s)...")
         
         try:
             new_instruments = self.sheets.read_config()
+            # Mark that we successfully checked
+            self.last_config_refresh_time = time.time()
+            
             if not new_instruments:
                 logger.warning("Config refresh returned empty. Ignoring.")
                 return
 
-            old_symbols = set(inst['Symbol'] for inst in self.instruments)
-            new_symbols = set(inst['Symbol'] for inst in new_instruments)
+            old_symbols_list = [inst['Symbol'] for inst in self.instruments]
+            new_symbols_list = [inst['Symbol'] for inst in new_instruments]
+            
+            old_symbols_set = set(old_symbols_list)
+            new_symbols_set = set(new_symbols_list)
 
-            added = new_symbols - old_symbols
-            removed = old_symbols - new_symbols
+            added = new_symbols_set - old_symbols_set
+            removed = old_symbols_set - new_symbols_set
+            reordered = (not added and not removed and old_symbols_list != new_symbols_list)
 
-            if not added and not removed:
-                logger.info("No config changes detected.")
+            if not added and not removed and not reordered:
+                logger.debug("No config changes detected.")
                 return
 
-            logger.info(f"Config changes detected! Added: {len(added)}, Removed: {len(removed)}")
+            if reordered:
+                logger.info("Config reordering detected.")
+            else:
+                logger.info(f"Config changes detected! Added: {len(added)}, Removed: {len(removed)}")
 
             # Update State
             self.instruments = new_instruments
@@ -159,25 +168,29 @@ class TradingFeederApp:
             # Handle WebSocket Subscriptions
             if self.ws_client and self.ws_client.is_connected:
                 if removed:
-                    logger.info(f"Unsubscribing from {len(removed)} symbols...")
+                    logger.info(f"Unsubscribing from {len(removed)} symbols: {list(removed)}")
                     self.ws_client.unsubscribe(list(removed))
                     # Clean buffer
                     with self.buffer_lock:
                         for sym in removed:
                             self.market_data_buffer.pop(sym, None)
+                            self.last_update_times.pop(sym, None)
                 
                 if added:
-                    logger.info(f"Subscribing to {len(added)} new symbols...")
+                    logger.info(f"Subscribing to {len(added)} new symbols: {list(added)}")
                     self.ws_client.subscribe(list(added))
                     
                     # Fetch 52W for new symbols
                     if self.quote_client:
                         try:
-                            logger.info("Fetching 52W data for new symbols...")
+                            logger.info(f"Fetching 52W data for {len(added)} new symbols...")
                             new_meta = self.quote_client.get_52_week_data(list(added))
-                            self.symbol_metadata.update(new_meta)
+                            if new_meta:
+                                self.symbol_metadata.update(new_meta)
                         except Exception as e:
                             logger.error(f"Failed to fetch 52W for new symbols: {e}")
+            else:
+                logger.warning("WS client not connected, skipping subscription update. Will be handled by main loop.")
 
         except Exception as e:
             logger.error(f"Config refresh failed: {e}")
