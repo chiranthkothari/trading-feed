@@ -69,6 +69,11 @@ class TradingFeederApp:
             if normalized_row:
                 symbol = normalized_row[0]
                 
+                # Check if this symbol is still active in our config
+                if symbol not in self.symbol_rank:
+                    # Optional: logger.debug(f"Ignoring data for inactive symbol {symbol}")
+                    return
+
                 # ENRICH IMMEDIATELY (Prevent flicker)
                 # Apply 52W data if available
                 meta = self.symbol_metadata.get(symbol, {})
@@ -175,6 +180,7 @@ class TradingFeederApp:
                         for sym in removed:
                             self.market_data_buffer.pop(sym, None)
                             self.last_update_times.pop(sym, None)
+                            self.symbol_metadata.pop(sym, None)
                 
                 if added:
                     logger.info(f"Subscribing to {len(added)} new symbols: {list(added)}")

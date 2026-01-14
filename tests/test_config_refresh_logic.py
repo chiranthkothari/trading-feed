@@ -25,6 +25,7 @@ class TestConfigRefresh(unittest.TestCase):
         self.app.ws_client = MagicMock()
         self.app.ws_client.is_connected = True
         self.app.instruments = [{'Symbol': 'A'}, {'Symbol': 'B'}]
+        self.app.symbol_rank = {'A': 0, 'B': 1}
         self.app.last_config_refresh_time = 0
 
     def test_reordering(self):
@@ -46,6 +47,24 @@ class TestConfigRefresh(unittest.TestCase):
             mock_logger.info.assert_any_call("Config changes detected! Added: 1, Removed: 1")
             self.app.ws_client.unsubscribe.assert_called_with(['A'])
             self.app.ws_client.subscribe.assert_called_with(['C'])
+
+    def test_filter_non_configured_symbols(self):
+        # A and B are configured in setUp
+        # Simulate incoming data for C
+        message = {'symbol': 'C', 'ltp': 100} # Simplified, DataNormalizer is mocked
+        with patch('src.main.DataNormalizer.normalize_market_data') as mock_norm:
+            mock_norm.return_value = ['C', 0, 0, 0, 0, 0, 100] # Symbol is index 0
+            self.app.on_market_data(message)
+            
+            with self.app.buffer_lock:
+                self.assertNotIn('C', self.app.market_data_buffer)
+
+            # Simulate incoming data for A
+            mock_norm.return_value = ['A', 0, 0, 0, 0, 0, 105]
+            self.app.on_market_data(message)
+            with self.app.buffer_lock:
+                self.assertIn('A', self.app.market_data_buffer)
+                self.assertEqual(self.app.market_data_buffer['A'][6], 105)
 
 if __name__ == '__main__':
     unittest.main()
