@@ -7,6 +7,7 @@ import requests
 import urllib.parse
 import hashlib
 from datetime import datetime
+import base64
 from fyers_apiv3 import fyersModel
 from src.config import Config
 
@@ -200,8 +201,11 @@ class FyersAuthenticator:
         try:
             # 1. Send Login OTP Request (Vagator API)
             # This triggers the OTP to be sent (and allows TOTP verification)
+            # NOTE: internal API expects Base64 encoded ID
+            encoded_fy_id = base64.b64encode(self.user_id.strip().encode()).decode()
+            
             payload_otp = {
-                "fy_id": self.user_id.strip(),
+                "fy_id": encoded_fy_id,
                 "app_id": "2"
             }
             logger.info(f"Sending OTP for User ID: '{payload_otp['fy_id']}'")
