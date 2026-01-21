@@ -202,16 +202,15 @@ class FyersAuthenticator:
             # 1. Send Login OTP Request (Vagator API)
             # This triggers the OTP to be sent (and allows TOTP verification)
             # NOTE: internal API expects Base64 encoded ID
-            raw_uid = self.user_id.strip()
-            logger.info(f"DEBUG: Raw User ID being encoded: {repr(raw_uid)}")
-            encoded_fy_id = base64.b64encode(raw_uid.encode()).decode()
-            logger.info(f"DEBUG: Encoded User ID: {encoded_fy_id}")
+            encoded_fy_id = base64.b64encode(self.user_id.strip().encode()).decode()
             
             payload_otp = {
                 "fy_id": encoded_fy_id,
-                "app_id": 2  # Changed to int 2
+                "app_id": "2",
+                "recaptcha_token": "",
+                "create_cookie": True
             }
-            logger.info(f"Sending OTP for User ID (Encoded): '{payload_otp['fy_id']}'")
+            logger.info(f"Sending OTP for User ID: '{self.user_id.strip()}' (Encoded: {encoded_fy_id})")
             res_otp = s.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2", json=payload_otp)
             
             try:
