@@ -66,3 +66,64 @@ class TelegramNotifier:
         )
         
         self.send_message(formatted_text)
+
+    def get_updates(self, offset=None):
+        """
+        Fetches new messages from the bot.
+        """
+        if not self.enabled:
+            return []
+        
+        url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
+        params = {"timeout": 10}
+        if offset:
+            params["offset"] = offset
+            
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            data = resp.json()
+            if data.get("ok"):
+                return data.get("result", [])
+        except Exception as e:
+            logger.error(f"Failed to get Telegram updates: {e}")
+        return []
+
+    def wait_for_response(self, timeout=300):
+        """
+        Polls for a response from the admin chat ID.
+        Returns the text of the message if received, else None.
+        """
+        if not self.enabled:
+            return None
+            
+        logger.info(f"Waiting for Telegram response (Timeout: {timeout}s)...")
+        start_time = time.time()
+        
+        # Get current offset to ignore old messages
+        updates = self.get_updates()
+        if updates:
+            last_update_id = updates[-1]["update_id"]
+            current_offset = last_update_id + 1
+        else:
+            current_offset = None
+            
+        while time.time() - start_time < timeout:
+            updates = self.get_updates(offset=current_offset)
+            
+            for update in updates:
+                # Update offset for next poll
+                current_offset = update["update_id"] + 1
+                
+                message = update.get("message", {})
+                chat_id = str(message.get("chat", {}).get("id"))
+                text = message.get("text")
+                
+                # Check if message is from our configured admin
+                if chat_id == str(self.chat_id) and text:
+                    logger.info("Received response from user.")
+                    return text
+            
+            time.sleep(2)
+            
+        logger.warning("Telegram wait timeout expired.")
+        return None

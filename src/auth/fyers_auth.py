@@ -7,6 +7,7 @@ import requests
 import urllib.parse
 import hashlib
 from datetime import datetime
+import pytz
 import base64
 from fyers_apiv3 import fyersModel
 from src.config import Config
@@ -57,7 +58,12 @@ class FyersAuthenticator:
                 logger.error("Refresh token failed. Falling back to headless login...")
 
         logger.info("Token missing or invalid. Initiating fresh login...")
-        return self._perform_login()
+        try:
+            return self._perform_login()
+        except Exception as e:
+            logger.error(f"Headless login failed: {e}")
+            logger.info("Attempting Manual Telegram Login...")
+            return self._manual_telegram_login()
 
     def _generate_access_token_from_refresh_token(self):
         """Generates a new access token using the refresh token."""
@@ -202,16 +208,17 @@ class FyersAuthenticator:
             # 1. Send Login OTP Request (Vagator API)
             # This triggers the OTP to be sent (and allows TOTP verification)
             # NOTE: internal API expects Base64 encoded ID
-            # encoded_fy_id = base64.b64encode(self.user_id.strip().encode()).decode() 
-            # Reverting to plain text based on failure with Base64
+            encoded_fy_id = base64.b64encode(self.user_id.strip().encode()).decode() 
             
             payload_otp = {
-                "fy_id": self.user_id.strip(),
+                "fy_id": encoded_fy_id,
                 "app_id": "2",
                 "recaptcha_token": "",
                 "create_cookie": True
             }
-            logger.info(f"Sending OTP for User ID: '{payload_otp['fy_id']}'")
+            logger.info(f"Sending OTP for User ID: '{self.user_id.strip()}' (Encoded: {encoded_fy_id})")
+            
+            # Using only necessary headers
             res_otp = s.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2", json=payload_otp)
             
             try:
@@ -221,7 +228,7 @@ class FyersAuthenticator:
                 return None
             
             if "request_key" not in res_otp_data:
-                 logger.error(f"Failed to send OTP: {res_otp_data}")
+                 logger.error(f"Failed to send OTP: {res_otp_data} Raw: {res_otp.text}")
                  return None
             
             request_key = res_otp_data["request_key"]
@@ -280,4 +287,92 @@ class FyersAuthenticator:
 
         except Exception as e:
             logger.error(f"Headless login failed: {e}")
+            return None
+
+    def _manual_telegram_login(self):
+        """
+        Fallback Method: Handles login via Telegram message interaction.
+        1. Checks Quiet Hours.
+        2. Sends Auth Link.
+        3. Waits for User Reply.
+        """
+        # 0. Initialize Telegram
+        from src.notifications.telegram import TelegramNotifier
+        notifier = TelegramNotifier()
+        if not notifier.enabled:
+            logger.error("Telegram not configured. Cannot perform manual login.")
+            return None
+
+        # 1. Quiet Hours Check (09:00 - 21:00 IST)
+        tz = pytz.timezone(Config.TIMEZONE)
+        now = datetime.now(tz)
+        if not (9 <= now.hour < 21):
+             logger.warning(f"Manual Login required but it is Quiet Hours ({now.strftime('%H:%M')}). Skipping notification.")
+             return None
+
+        # 2. Generate Auth URL
+        session = fyersModel.SessionModel(
+            client_id=self.client_id,
+            secret_key=self.secret_key,
+            redirect_uri=self.redirect_uri,
+            response_type="code",
+            grant_type="authorization_code"
+        )
+        auth_url = session.generate_authcode()
+        
+        # 3. Send Notification
+        msg = (
+            "🔴 **Headless Login Failed**\n"
+            "Automation cannot proceed without your help.\n\n"
+            "1. Click this link: [Authenticate Fyers]({url})\n"
+            "2. Login & Authorize the app.\n"
+            "3. You will be redirected to a page (possibly blank).\n"
+            "4. **Copy the entire URL** from your browser's address bar.\n"
+            "5. **Paste that URL here** as a reply.\n\n"
+            "_(Waiting 5 mins)_"
+        ).format(url=auth_url)
+        
+        notifier.send_message(msg)
+        
+        # 4. Wait for Response
+        response_text = notifier.wait_for_response(timeout=300)
+        
+        if not response_text:
+            logger.error("Manual login timed out or failed.")
+            notifier.send_message("❌ **Login Timed Out**. Retrying in next loop.")
+            return None
+            
+        # 5. Extract Auth Code
+        try:
+            logger.info(f"Received manual response: {response_text[:20]}...")
+            parsed = urllib.parse.urlparse(response_text)
+            params = urllib.parse.parse_qs(parsed.query)
+            auth_code = params.get("auth_code", [None])[0]
+            
+            if not auth_code:
+                # User might have pasted just the code?
+                if len(response_text) > 20 and "http" not in response_text:
+                     auth_code = response_text.strip()
+                else:
+                     raise ValueError("Could not find 'auth_code' in URL.")
+
+            notifier.send_message("✅ **Received!** Logging in...")
+            
+            # 6. Generate Token
+            session.set_token(auth_code)
+            response = session.generate_token()
+            
+            if response.get("s") == "ok":
+                access_token = response.get("access_token")
+                refresh_token = response.get("refresh_token")
+                self._save_token(access_token, refresh_token)
+                notifier.send_message("🎉 **Login Successful!** Resuming feed.")
+                return access_token
+            else:
+                notifier.send_message(f"❌ **Token Generation Failed**: {response}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Manual login parsing failed: {e}")
+            notifier.send_message(f"❌ **Error parsing response**: {e}")
             return None
