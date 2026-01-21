@@ -321,7 +321,12 @@ class FyersAuthenticator:
         auth_url = session.generate_authcode()
         
         # 3. Send Notification
+        mention = ""
+        if Config.TELEGRAM_ADMIN_ID:
+            mention = f"[Attention Needed](tg://user?id={Config.TELEGRAM_ADMIN_ID})\n\n"
+
         msg = (
+            f"{mention}"
             "🔴 **Headless Login Failed**\n"
             "Automation cannot proceed without your help.\n\n"
             "1. Click this link: [Authenticate Fyers]({url})\n"
