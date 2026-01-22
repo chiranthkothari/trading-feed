@@ -83,21 +83,29 @@ class FyersAuthenticator:
             
             app_id_hash = hashlib.sha256(f"{app_id}:{self.secret_key}".encode()).hexdigest()
             
+            # PIN Handling: Try to convert to int if possible, otherwise string
+            pin_value = self.pin
+            if pin_value and str(pin_value).isdigit():
+                pin_value = int(pin_value)
+
             payload = {
                 "grant_type": "refresh_token",
                 "appIdHash": app_id_hash,
                 "refresh_token": refresh_token,
-                "pin": self.pin # Sometimes required? usually not for refresh check docs.
-                # Docs: { "grant_type": "refresh_token", "appIdHash": "...", "refresh_token": "...", "pin": "..." }
+                "pin": pin_value
             }
             
             headers = {"Content-Type": "application/json"}
-            resp = requests.post("https://api-t1.fyers.in/api/v3/validate-refresh-token", json=payload, headers=headers)
+            # URLs: api-t1 is sometimes flaky or deprecated for this. Using main api.fyers.in
+            resp = requests.post("https://api.fyers.in/api/v3/validate-refresh-token", json=payload, headers=headers)
             
             data = resp.json()
             if data.get("s") == "ok":
                 access_token = data.get("access_token")
-                new_refresh_token = data.get("refresh_token")
+                # Some responses might not return a new refresh_token, keep old one if so? 
+                # Usually it does return one.
+                new_refresh_token = data.get("refresh_token", refresh_token) 
+                
                 self._save_token(access_token, new_refresh_token)
                 return access_token
             else:
