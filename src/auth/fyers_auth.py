@@ -96,14 +96,24 @@ class FyersAuthenticator:
             }
             
             headers = {"Content-Type": "application/json"}
-            # URLs: api-t1 is sometimes flaky or deprecated for this. Using main api.fyers.in
-            resp = requests.post("https://api.fyers.in/api/v3/validate-refresh-token", json=payload, headers=headers)
+            # Reverting to api-t1 which was responding previously.
+            # The issue was likely just the PIN format.
+            url = "https://api-t1.fyers.in/api/v3/validate-refresh-token"
             
-            data = resp.json()
+            try:
+                resp = requests.post(url, json=payload, headers=headers)
+                
+                # Check for non-200 status (though Fyers might return 200 with error body)
+                if resp.status_code != 200:
+                    logger.warning(f"Refresh API returned status {resp.status_code}: {resp.text}")
+
+                data = resp.json()
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode Refresh API response. Status: {resp.status_code}, Body: {resp.text}")
+                return None
+
             if data.get("s") == "ok":
                 access_token = data.get("access_token")
-                # Some responses might not return a new refresh_token, keep old one if so? 
-                # Usually it does return one.
                 new_refresh_token = data.get("refresh_token", refresh_token) 
                 
                 self._save_token(access_token, new_refresh_token)
