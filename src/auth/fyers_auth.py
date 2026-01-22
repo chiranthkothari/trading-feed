@@ -83,10 +83,9 @@ class FyersAuthenticator:
             
             app_id_hash = hashlib.sha256(f"{app_id}:{self.secret_key}".encode()).hexdigest()
             
-            # PIN Handling: Try to convert to int if possible, otherwise string
-            pin_value = self.pin
-            if pin_value and str(pin_value).isdigit():
-                pin_value = int(pin_value)
+            # PIN Handling: Revert to string (cleaned) as Int caused -99. 
+            # If -502 persists, it means the stored refresh token might surely be invalid/mismatched or PIN is wrong.
+            pin_value = str(self.pin).strip() if self.pin else ""
 
             payload = {
                 "grant_type": "refresh_token",
@@ -97,7 +96,6 @@ class FyersAuthenticator:
             
             headers = {"Content-Type": "application/json"}
             # Reverting to api-t1 which was responding previously.
-            # The issue was likely just the PIN format.
             url = "https://api-t1.fyers.in/api/v3/validate-refresh-token"
             
             try:
@@ -125,6 +123,53 @@ class FyersAuthenticator:
         except Exception as e:
             logger.error(f"Refresh Token Flow Error: {e}")
             return None
+            
+### skipping _load_token, _save_token, _is_token_valid, _perform_login ###
+
+    def _headless_login(self, auth_url):
+        """
+        Simulates the browser login flow to extract the auth code.
+        """
+        # Headers mimicking a browser
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+            "Origin": "https://trade.fyers.in",
+            "Referer": "https://trade.fyers.in/"
+        }
+        
+        s = requests.Session()
+        s.headers.update(headers)
+
+        try:
+            # 1. Send Login OTP Request (Vagator API)
+            # This triggers the OTP to be sent (and allows TOTP verification)
+            # NOTE: internal API expects Base64 encoded ID
+            encoded_fy_id = base64.b64encode(self.user_id.strip().encode()).decode() 
+            
+            payload_otp = {
+                "fy_id": encoded_fy_id,
+                "app_id": "3", # UDPATE: "2" often fails with -1025. "3" is common for newer web.
+                "recaptcha_token": "",
+                "create_cookie": True
+            }
+            logger.info(f"Sending OTP for User ID: '{self.user_id.strip()}' (Encoded: {encoded_fy_id})")
+            
+            # Using only necessary headers
+            res_otp = s.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2", json=payload_otp)
+            
+            try:
+                res_otp_data = res_otp.json()
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode JSON. Response: {res_otp.text}")
+                return None
+            
+            if "request_key" not in res_otp_data:
+                 logger.error(f"Failed to send OTP: {res_otp_data} Raw: {res_otp.text}")
+                 return None
+            
+            request_key = res_otp_data["request_key"]
 
     def _load_token(self):
         """Loads access token from file."""
