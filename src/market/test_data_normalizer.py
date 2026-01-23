@@ -73,3 +73,48 @@ def test_normalize_prev_close_zero():
     }
     row = DataNormalizer.normalize_market_data(raw)
     assert row[10] == 0.0 # Change % should be 0, not Inf/Error
+
+
+# Tests for is_valid_tick validation method
+def test_is_valid_tick_valid_data():
+    """Valid tick with symbol and positive LTP should pass"""
+    raw = {"symbol": "NSE:RELIANCE-EQ", "ltp": 2500.0}
+    assert DataNormalizer.is_valid_tick(raw) == True
+
+
+def test_is_valid_tick_missing_symbol():
+    """Tick without symbol should be invalid"""
+    raw = {"ltp": 2500.0}
+    assert DataNormalizer.is_valid_tick(raw) == False
+
+
+def test_is_valid_tick_empty_symbol():
+    """Tick with empty symbol should be invalid"""
+    raw = {"symbol": "", "ltp": 2500.0}
+    assert DataNormalizer.is_valid_tick(raw) == False
+
+
+def test_is_valid_tick_missing_ltp():
+    """Tick without LTP should be invalid"""
+    raw = {"symbol": "NSE:RELIANCE-EQ"}
+    assert DataNormalizer.is_valid_tick(raw) == False
+
+
+def test_is_valid_tick_zero_ltp():
+    """Tick with zero LTP should be invalid"""
+    raw = {"symbol": "NSE:RELIANCE-EQ", "ltp": 0}
+    assert DataNormalizer.is_valid_tick(raw) == False
+
+
+def test_is_valid_tick_negative_ltp():
+    """Tick with negative LTP should be invalid"""
+    raw = {"symbol": "NSE:RELIANCE-EQ", "ltp": -100}
+    assert DataNormalizer.is_valid_tick(raw) == False
+
+
+def test_is_valid_tick_non_dict():
+    """Non-dict input should be invalid"""
+    assert DataNormalizer.is_valid_tick(None) == False
+    assert DataNormalizer.is_valid_tick([]) == False
+    assert DataNormalizer.is_valid_tick("string") == False
+

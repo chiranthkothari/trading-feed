@@ -8,6 +8,27 @@ logger = logging.getLogger(__name__)
 
 class DataNormalizer:
     @staticmethod
+    def is_valid_tick(raw_data: dict) -> bool:
+        """
+        Returns True if tick has all essential fields with valid values.
+        This prevents malformed/partial ticks from corrupting buffer data.
+        """
+        if not isinstance(raw_data, dict):
+            return False
+        
+        # Symbol is mandatory
+        symbol = raw_data.get('symbol')
+        if not symbol or not isinstance(symbol, str):
+            return False
+        
+        # LTP must exist and be positive
+        ltp = raw_data.get('ltp')
+        if ltp is None or ltp <= 0:
+            return False
+        
+        return True
+
+    @staticmethod
     def normalize_market_data(raw_data):
         """
         Normalizes raw FYERS WebSocket data into a format suitable for Google Sheets.
@@ -113,7 +134,18 @@ class DataNormalizer:
             change_rs = 0
             change_pct = 0.0
             
-            if prev_close > 0:
+            # Sanity check: prev_close should be reasonable compared to LTP
+            # If prev_close is too far from LTP (e.g., differs by more than 50%), 
+            # it's likely a malformed tick - skip the calculation to avoid spikes
+            prev_close_is_valid = prev_close > 0
+            if prev_close_is_valid and ltp > 0:
+                ratio = prev_close / ltp
+                # If prev_close is less than 50% or more than 200% of LTP, it's suspicious
+                if ratio < 0.5 or ratio > 2.0:
+                    logger.warning(f"Suspicious prev_close for {symbol}: prev_close={prev_close}, ltp={ltp}, ratio={ratio:.2f}")
+                    prev_close_is_valid = False
+            
+            if prev_close_is_valid:
                 change_rs = ltp - prev_close
                 change_pct = (change_rs / prev_close) * 100
             

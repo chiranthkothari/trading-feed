@@ -62,50 +62,104 @@ class TradingFeederApp:
         sys.exit(0)
 
     def on_market_data(self, message):
-        """Callback for WebSocket data."""
+        """Callback for WebSocket data. Handles both single and batch messages."""
         try:
+            # Handle batch messages (list of ticks from SDK)
+            if isinstance(message, list):
+                for tick in message:
+                    self._process_single_tick(tick)
+                return
+            
+            # Handle single tick
+            self._process_single_tick(message)
+            
+        except Exception as e:
+            logger.error(f"Error processing tick batch: {e}")
+
+    def _merge_row_data(self, existing_row, new_row):
+        """
+        Merge new row with existing, preserving non-zero values for critical fields.
+        This prevents partial ticks (with zeros) from overwriting good data.
+        """
+        merged = new_row[:]
+        
+        # Fields that should never be zero in valid market data
+        # Indices: 2=prev_close, 3=open, 4=high, 5=low
+        # We preserve these from existing if new value is 0
+        preserve_if_zero_indices = [2, 3, 4, 5]
+        
+        for idx in preserve_if_zero_indices:
+            if idx < len(merged) and idx < len(existing_row):
+                if merged[idx] == 0 and existing_row[idx] != 0:
+                    merged[idx] = existing_row[idx]
+                    logger.debug(f"Preserved existing value for index {idx}: {existing_row[idx]}")
+        
+        # Recalculate change values if we preserved prev_close
+        if merged[2] != new_row[2] and merged[2] > 0 and merged[6] > 0:
+            ltp = merged[6]
+            prev_close = merged[2]
+            change_rs = ltp - prev_close
+            change_pct = (change_rs / prev_close) * 100
+            merged[9] = round(change_rs, 2)
+            merged[10] = round(change_pct, 2)
+        
+        return merged
+
+    def _process_single_tick(self, tick):
+        """Process a single tick message with validation and smart merging."""
+        try:
+            # Validate tick before processing
+            if not DataNormalizer.is_valid_tick(tick):
+                logger.debug(f"Ignoring invalid tick: {tick.get('symbol', 'UNKNOWN') if isinstance(tick, dict) else 'non-dict'}")
+                return
+            
             # Normalize
-            normalized_row = DataNormalizer.normalize_market_data(message)
-            if normalized_row:
-                symbol = normalized_row[0]
+            normalized_row = DataNormalizer.normalize_market_data(tick)
+            if not normalized_row:
+                return
                 
-                # Check if this symbol is still active in our config
-                if symbol not in self.symbol_rank:
-                    # Optional: logger.debug(f"Ignoring data for inactive symbol {symbol}")
-                    return
+            symbol = normalized_row[0]
+            
+            # Check if this symbol is still active in our config
+            if symbol not in self.symbol_rank:
+                return
 
-                # ENRICH IMMEDIATELY (Prevent flicker)
-                # Apply 52W data if available
-                meta = self.symbol_metadata.get(symbol, {})
+            # ENRICH IMMEDIATELY (Prevent flicker)
+            # Apply 52W data if available
+            meta = self.symbol_metadata.get(symbol, {})
+            
+            # Dynamic update of 52W High/Low
+            ltp = normalized_row[6]
+            if ltp > 0:
+                current_52h = meta.get("52h", 0)
+                current_52l = meta.get("52l", 0)
                 
-                # Dynamic update of 52W High/Low
-                ltp = normalized_row[6]
-                if ltp > 0:
-                    current_52h = meta.get("52h", 0)
-                    current_52l = meta.get("52l", 0)
-                    
-                    updated = False
-                    if ltp > current_52h:
-                        meta["52h"] = ltp
-                        updated = True
-                    
-                    if current_52l == 0 or ltp < current_52l:
-                        meta["52l"] = ltp
-                        updated = True
-                    
-                    if updated:
-                        # self.symbol_metadata stores reference to 'meta', so it updates globally
-                        pass
+                updated = False
+                if ltp > current_52h:
+                    meta["52h"] = ltp
+                    updated = True
+                
+                if current_52l == 0 or ltp < current_52l:
+                    meta["52l"] = ltp
+                    updated = True
+                
+                if updated:
+                    # self.symbol_metadata stores reference to 'meta', so it updates globally
+                    pass
 
-                if meta and len(normalized_row) > 14:
-                     normalized_row[13] = meta.get("52h", 0)
-                     normalized_row[14] = meta.get("52l", 0)
+            if meta and len(normalized_row) > 14:
+                 normalized_row[13] = meta.get("52h", 0)
+                 normalized_row[14] = meta.get("52l", 0)
 
-                with self.buffer_lock:
-                    self.market_data_buffer[symbol] = normalized_row
-                    self.last_update_times[symbol] = time.time()
-            else:
-                pass 
+            with self.buffer_lock:
+                # Smart merge: preserve good values if new tick has zeros
+                existing_row = self.market_data_buffer.get(symbol)
+                if existing_row:
+                    normalized_row = self._merge_row_data(existing_row, normalized_row)
+                
+                self.market_data_buffer[symbol] = normalized_row
+                self.last_update_times[symbol] = time.time()
+                
         except Exception as e:
             logger.error(f"Error processing tick: {e}")
 
