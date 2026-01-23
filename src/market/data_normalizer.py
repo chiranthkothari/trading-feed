@@ -135,12 +135,16 @@ class DataNormalizer:
             change_pct = 0.0
             
             # Sanity check: prev_close should be reasonable compared to LTP
-            # If prev_close is too far from LTP (e.g., differs by more than 50%), 
-            # it's likely a malformed tick - skip the calculation to avoid spikes
+            # This check is for EQUITY only - derivatives (options/futures) can have wild swings
+            # Options can easily drop 50-90% overnight due to time decay
             prev_close_is_valid = prev_close > 0
-            if prev_close_is_valid and ltp > 0:
+            
+            # Determine if this is an equity or derivative
+            is_equity = symbol.endswith('-EQ')
+            
+            if prev_close_is_valid and ltp > 0 and is_equity:
                 ratio = prev_close / ltp
-                # If prev_close is less than 50% or more than 200% of LTP, it's suspicious
+                # For equities: if prev_close differs by more than 50% from LTP, it's suspicious
                 if ratio < 0.5 or ratio > 2.0:
                     logger.warning(f"Suspicious prev_close for {symbol}: prev_close={prev_close}, ltp={ltp}, ratio={ratio:.2f}")
                     prev_close_is_valid = False
