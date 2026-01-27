@@ -3,6 +3,7 @@ from datetime import datetime
 import time
 import pytz
 from src.config import Config
+from src.notifications.telegram import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,17 @@ class DataNormalizer:
                 ratio = prev_close / ltp
                 # For equities: if prev_close differs by more than 50% from LTP, it's suspicious
                 if ratio < 0.5 or ratio > 2.0:
-                    logger.warning(f"Suspicious prev_close for {symbol}: prev_close={prev_close}, ltp={ltp}, ratio={ratio:.2f}")
+                    msg = f"SUSPICIOUS DATA DETECTED for {symbol}\nPrev Close: {prev_close}\nLTP: {ltp}\nRatio: {ratio:.2f}\n\nRAW_DATA: {raw_data}"
+                    logger.critical(msg.replace("\n", " ")) # Log single line
+                    
+                    # Send Telegram Alert
+                    try:
+                        notifier = TelegramNotifier()
+                        if notifier.enabled:
+                             notifier.send_alert("DATA_INTEGRITY_RISK", msg)
+                    except Exception as e:
+                        logger.error(f"Failed to send Telegram alert: {e}")
+
                     prev_close_is_valid = False
             
             if prev_close_is_valid:
